@@ -579,7 +579,9 @@ process msgfPlus {
   ntt = [full: 2, semi: 1, non: 0][params.terminicleaved]
 
   """
-  FileFilter -in $x -out sample.mzML -peak_options:level \"1 2\"
+  source activate openms-2.5.0
+  FileFilter -in $x -out sample.mzML -peak_options:level \"[1 2]\"
+  source deactivate openms-2.5.0
   msgf_plus -Xmx8G -d $db -s sample.mzML -o "${sample}.mzid" -thread ${task.cpus * params.threadspercore} -mod $mods -tda 0 -maxMissedCleavages $params.maxmiscleav -t ${params.prectol}  -ti ${params.iso_err} -m ${fragmeth} -inst ${msgfinstrument} -e ${enzyme} -protocol ${msgfprotocol} -ntt ${ntt} -minLength ${params.minpeplen} -maxLength ${params.maxpeplen} -minCharge ${params.mincharge} -maxCharge ${params.maxcharge} -n 1 -addFeatures 1
   msgf_plus -Xmx3500M edu.ucsd.msjava.ui.MzIDToTsv -i "${sample}.mzid" -o out.tsv
   awk -F \$'\\t' '{OFS=FS ; print \$0, "Biological set" ${fractionation ? ', "Strip", "Fraction"' : ''}}' <( head -n+1 out.tsv) > "${sample}.mzid.tsv"
