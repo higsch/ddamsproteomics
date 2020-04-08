@@ -572,7 +572,7 @@ process msgfPlus {
   
   script:
   msgfprotocol = [tmt:4, itraq:2, false:0][plextype]
-  msgfinstrument = [velos:1, qe:3, false:0][params.instrument]
+  msgfinstrument = [velos:1, qe:3, false:0, frankfurt_lumos:0][params.instrument]
   fragmeth = [auto:0, cid:1, etd:2, hcd:3, uvpd:4][params.frag]
   enzyme = params.enzyme.indexOf('-') > -1 ? params.enzyme.replaceAll('-', '') : params.enzyme
   enzyme = [unspecific:0, trypsin:1, chymotrypsin: 2, lysc: 3, lysn: 4, gluc: 5, argc: 6, aspn:7, no_enzyme:9][enzyme]
