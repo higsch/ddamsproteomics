@@ -66,6 +66,7 @@ def helpMessage() {
                                     --genefield
       --genefield VALUE             Number to determine in which field of the FASTA header (split 
                                     by --fastadelim) the gene name can be found.
+      --keepfragtype VALUE          Fragmentation type to keep after msgfplus search
 
 
     Other options:
@@ -127,6 +128,7 @@ params.noquant = false
 params.denoms = false
 params.sampletable = false
 params.deqms = false
+params.keepfragtype = 'HCD'
 
 // Validate and set file inputs
 fractionation = (params.hirief || params.fractions)
@@ -234,6 +236,7 @@ summary['peptide pI data'] = params.pipep
 summary['Only output peptides'] = params.onlypeptides
 summary['Do not quantify'] = params.noquant
 summary['Perform DE analysis'] = params.deqms
+summary['Fragmentation type to keep'] = params.keepfragtype
 summary['Max Memory']   = params.max_memory
 summary['Max CPUs']     = params.max_cpus
 summary['Max Time']     = params.max_time
@@ -582,7 +585,7 @@ process msgfPlus {
   msgf_plus -Xmx8G -d $db -s $x -o "${sample}.mzid" -thread ${task.cpus * params.threadspercore} -mod $mods -tda 0 -maxMissedCleavages $params.maxmiscleav -t ${params.prectol}  -ti ${params.iso_err} -m ${fragmeth} -inst ${msgfinstrument} -e ${enzyme} -protocol ${msgfprotocol} -ntt ${ntt} -minLength ${params.minpeplen} -maxLength ${params.maxpeplen} -minCharge ${params.mincharge} -maxCharge ${params.maxcharge} -n 1 -addFeatures 1
   msgf_plus -Xmx3500M edu.ucsd.msjava.ui.MzIDToTsv -i "${sample}.mzid" -o out.tsv
   awk -F \$'\\t' '{OFS=FS ; print \$0, "Biological set" ${fractionation ? ', "Strip", "Fraction"' : ''}}' <( head -n+1 out.tsv) > "${sample}.mzid.tsv"
-  awk -F \$'\\t' '{OFS=FS ; print \$0, "$setname" ${fractionation ? ", \"$platename\", \"$fraction\"" : ''}}' <( tail -n+2 out.tsv) >> "${sample}.mzid.tsv"
+  awk -F \$'\\t' '\$4 == $params.keepfragtype {OFS=FS ; print \$0, "$setname" ${fractionation ? ", \"$platename\", \"$fraction\"" : ''}}' <( tail -n+2 out.tsv) >> "${sample}.mzid.tsv"
   rm ${db.baseName.replaceFirst(/\.fasta/, "")}.c*
   """
 }
