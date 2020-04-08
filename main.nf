@@ -696,432 +696,432 @@ process createPSMTable {
   """
 }
 
-// Collect setnames and merge with PSM tables for peptide table creation
-def listify(it) {
-  return it instanceof java.util.List ? it : [it]
-}
-setpsmtables
-  .map { it -> [it[0], listify(it[1])] }
-  .map{ it -> [it[0], it[1].collect() { it.baseName.replaceFirst(/\.tsv$/, "") }, it[1]]}
-  .tap { deqms_psms }
-  .transpose()
-  .set { psm_pep }
+// // Collect setnames and merge with PSM tables for peptide table creation
+// def listify(it) {
+//   return it instanceof java.util.List ? it : [it]
+// }
+// setpsmtables
+//   .map { it -> [it[0], listify(it[1])] }
+//   .map{ it -> [it[0], it[1].collect() { it.baseName.replaceFirst(/\.tsv$/, "") }, it[1]]}
+//   .tap { deqms_psms }
+//   .transpose()
+//   .set { psm_pep }
 
 
-process psm2Peptides {
+// process psm2Peptides {
 
-  input:
-  set val(td), val(setname), file('psms') from psm_pep
+//   input:
+//   set val(td), val(setname), file('psms') from psm_pep
   
-  output:
-  set val(setname), val(td), file("${setname}_linmod") into pepslinmod
-  set val(setname), val('peptides'), val(td), file("${setname}_linmod") into peptides_out
-  set val(setname), val(td), file(psms), file('proteins'), val('proteins') into proteins
-  set val(setname), val(td), file(psms), file('genes'), val('genes') into genes
-  set val(setname), val(td), file(psms), file('symbols'), val('assoc') into symbols
-  file('warnings') optional true into pepwarnings
+//   output:
+//   set val(setname), val(td), file("${setname}_linmod") into pepslinmod
+//   set val(setname), val('peptides'), val(td), file("${setname}_linmod") into peptides_out
+//   set val(setname), val(td), file(psms), file('proteins'), val('proteins') into proteins
+//   set val(setname), val(td), file(psms), file('genes'), val('genes') into genes
+//   set val(setname), val(td), file(psms), file('symbols'), val('assoc') into symbols
+//   file('warnings') optional true into pepwarnings
 
-  script:
-  col = accolmap.peptides + 1  // psm2pep adds a column
-  do_raw_isoquant = rawisoquant && td == 'target'
-  """
-  # Create peptide table from PSM table, picking best scoring unique peptides
-  msspeptable psm2pep -i psms -o peptides --scorecolpattern svm --spectracol 1 ${!params.noquant && params.isobaric && td == 'target' ? "--isobquantcolpattern plex" : "" } ${!params.noquant && td == 'target' ? "--ms1quantcolpattern area" : ""}
-  # Move peptide sequence to first column
-  paste <( cut -f ${col} peptides) <( cut -f 1-${col-1},${col+1}-500 peptides) > peptide_table.txt
-  # Create empty protein/gene/gene-symbol tables with only the identified accessions, will be filled later
-  echo Protein ID|tee proteins genes symbols
-  ${!params.onlypeptides ? "tail -n+2 psms|cut -f ${accolmap.proteins}|grep -v '\\;'| grep -v '^NA\$' | grep -v '^\$'|sort|uniq >> proteins || echo 'Could not find any ${td} proteins for set ${setname}' >> warnings" : "" }
-  ${params.genes ? "tail -n+2 psms|cut -f ${accolmap.genes}|grep -v '\\;'| grep -v '^NA\$' | grep -v '^\$'|sort|uniq >> genes || echo 'Could not find any ${td} genes for set ${setname}' >> warnings" : ""}
-  ${params.symbols ? "tail -n+2 psms|cut -f ${accolmap.assoc}|grep -v '\\;'| grep -v '^NA\$' | grep -v '^\$'|sort|uniq >> symbols || echo 'Could not find any ${td} symbols for set ${setname}' >> warnings" : ""}
-  ${do_raw_isoquant ? "msspsmtable isoratio -i psms -o pepisoquant --targettable peptide_table.txt --protcol ${accolmap.peptides} --isobquantcolpattern plex --minint 0.1 --denompatterns ${setdenoms[setname].join(' ')}" : ''}
-  ${do_raw_isoquant ? "mv pepisoquant peptide_table.txt" : ''}
-  # Create linear modeled q-values of peptides (modeled svm scores vs q-values) for more protein-FDR precision.
-  msspeptable modelqvals -i peptide_table.txt -o ${setname}_linmod --scorecolpattern svm --fdrcolpattern '^q-value'
-  cut -f \$(head -n1 "${setname}_linmod" | tr '\\t' '\\n' | grep -n 'linear modeled' | cut -f1 -d':') "${setname}_linmod" | grep "^[0-1]\\.[0-9]*\$" || echo 'Could not calculate linear modeled q-values for ${td} peptides of set ${setname}' >> warnings
-  """
-}
-
-
-// Different amount of processes depending on genes and gene symbols are desired
-// Input for proteins, genes and symbols is identical at this stage so tap and concat
-// onto itself.
-if (params.genes && params.symbols) { 
-  pepslinmod
-    .tap { pepsg; pepss }
-    .concat(pepsg, pepss)
-    .set { pepslinmod_prot }
-  proteins
-    .concat(genes, symbols)
-    .join(pepslinmod_prot, by: [0,1])
-    .set { prepgs_in }
-} else if (params.genes) { 
-  pepslinmod
-    .tap { pepsg }
-    .concat(pepsg)
-    .set { pepslinmod_prot }
-  proteins
-    .concat(genes)
-    .join(pepslinmod_prot, by: [0,1])
-    .set { prepgs_in }
-} else { 
-  proteins
-    .join(pepslinmod, by: [0,1])
-    .set { prepgs_in }
-}
+//   script:
+//   col = accolmap.peptides + 1  // psm2pep adds a column
+//   do_raw_isoquant = rawisoquant && td == 'target' && params.noratios
+//   """
+//   # Create peptide table from PSM table, picking best scoring unique peptides
+//   msspeptable psm2pep -i psms -o peptides --scorecolpattern svm --spectracol 1 ${!params.noquant && params.isobaric && td == 'target' ? "--isobquantcolpattern plex" : "" } ${!params.noquant && td == 'target' ? "--ms1quantcolpattern area" : ""}
+//   # Move peptide sequence to first column
+//   paste <( cut -f ${col} peptides) <( cut -f 1-${col-1},${col+1}-500 peptides) > peptide_table.txt
+//   # Create empty protein/gene/gene-symbol tables with only the identified accessions, will be filled later
+//   echo Protein ID|tee proteins genes symbols
+//   ${!params.onlypeptides ? "tail -n+2 psms|cut -f ${accolmap.proteins}|grep -v '\\;'| grep -v '^NA\$' | grep -v '^\$'|sort|uniq >> proteins || echo 'Could not find any ${td} proteins for set ${setname}' >> warnings" : "" }
+//   ${params.genes ? "tail -n+2 psms|cut -f ${accolmap.genes}|grep -v '\\;'| grep -v '^NA\$' | grep -v '^\$'|sort|uniq >> genes || echo 'Could not find any ${td} genes for set ${setname}' >> warnings" : ""}
+//   ${params.symbols ? "tail -n+2 psms|cut -f ${accolmap.assoc}|grep -v '\\;'| grep -v '^NA\$' | grep -v '^\$'|sort|uniq >> symbols || echo 'Could not find any ${td} symbols for set ${setname}' >> warnings" : ""}
+//   ${do_raw_isoquant ? "msspsmtable isoratio -i psms -o pepisoquant --targettable peptide_table.txt --protcol ${accolmap.peptides} --isobquantcolpattern plex --minint 0.1 --denompatterns ${setdenoms[setname].join(' ')}" : ''}
+//   ${do_raw_isoquant ? "mv pepisoquant peptide_table.txt" : ''}
+//   # Create linear modeled q-values of peptides (modeled svm scores vs q-values) for more protein-FDR precision.
+//   msspeptable modelqvals -i peptide_table.txt -o ${setname}_linmod --scorecolpattern svm --fdrcolpattern '^q-value'
+//   cut -f \$(head -n1 "${setname}_linmod" | tr '\\t' '\\n' | grep -n 'linear modeled' | cut -f1 -d':') "${setname}_linmod" | grep "^[0-1]\\.[0-9]*\$" || echo 'Could not calculate linear modeled q-values for ${td} peptides of set ${setname}' >> warnings
+//   """
+// }
 
 
-/*
-* Step 4: Infer and quantify proteins and genes
-*/
+// // Different amount of processes depending on genes and gene symbols are desired
+// // Input for proteins, genes and symbols is identical at this stage so tap and concat
+// // onto itself.
+// if (params.genes && params.symbols) { 
+//   pepslinmod
+//     .tap { pepsg; pepss }
+//     .concat(pepsg, pepss)
+//     .set { pepslinmod_prot }
+//   proteins
+//     .concat(genes, symbols)
+//     .join(pepslinmod_prot, by: [0,1])
+//     .set { prepgs_in }
+// } else if (params.genes) { 
+//   pepslinmod
+//     .tap { pepsg }
+//     .concat(pepsg)
+//     .set { pepslinmod_prot }
+//   proteins
+//     .concat(genes)
+//     .join(pepslinmod_prot, by: [0,1])
+//     .set { prepgs_in }
+// } else { 
+//   proteins
+//     .join(pepslinmod, by: [0,1])
+//     .set { prepgs_in }
+// }
 
 
-// Group set/acctype T-D combinations and remove those with only target or only decoy
-tprepgs_in = Channel.create()
-dprepgs_in = Channel.create()
-prepgs_in
-  .groupTuple(by: [0,4])
-  .filter { it -> it[1].size() == 2 }
-  .transpose()
-  .choice(tprepgs_in, dprepgs_in) { it[1] == 'target' ? 0 : 1 }
+// /*
+// * Step 4: Infer and quantify proteins and genes
+// */
 
 
-process proteinGeneSymbolTableFDR {
+// // Group set/acctype T-D combinations and remove those with only target or only decoy
+// tprepgs_in = Channel.create()
+// dprepgs_in = Channel.create()
+// prepgs_in
+//   .groupTuple(by: [0,4])
+//   .filter { it -> it[1].size() == 2 }
+//   .transpose()
+//   .choice(tprepgs_in, dprepgs_in) { it[1] == 'target' ? 0 : 1 }
+
+
+// process proteinGeneSymbolTableFDR {
   
-  when: !params.onlypeptides
+//   when: !params.onlypeptides
 
-  input:
-  set val(setname), val(td), file('tpsms'), file('tproteins'), val(acctype), file('tpeplinmod') from tprepgs_in
-  set val(setname), val(td), file('dpsms'), file('dproteins'), val(acctype), file('dpeplinmod') from dprepgs_in
-  set file(tfasta), file(dfasta) from searchdbs
+//   input:
+//   set val(setname), val(td), file('tpsms'), file('tproteins'), val(acctype), file('tpeplinmod') from tprepgs_in
+//   set val(setname), val(td), file('dpsms'), file('dproteins'), val(acctype), file('dpeplinmod') from dprepgs_in
+//   set file(tfasta), file(dfasta) from searchdbs
 
-  output:
-  set val(setname), val(acctype), file("${setname}_protfdr") into protfdrout
-  file('warnings') optional true into fdrwarnings
+//   output:
+//   set val(setname), val(acctype), file("${setname}_protfdr") into protfdrout
+//   file('warnings') optional true into fdrwarnings
 
-  script:
-  scorecolpat = acctype == 'proteins' ? '^q-value$' : 'linear model'
-  """
-  ${!params.noquant ? "mssprottable ms1quant -i tproteins -o tprotms1 --psmtable tpsms --protcol ${accolmap[acctype]}" : 'mv tproteins tprotms1'}
-  ${rawisoquant ? "msspsmtable isoratio -i tpsms -o tprotquant --protcol ${accolmap[acctype]} --targettable tprotms1 --isobquantcolpattern plex --minint 0.1 --denompatterns ${setdenoms[setname].join(' ')}": 'mv tprotms1 tprotquant'}
+//   script:
+//   scorecolpat = acctype == 'proteins' ? '^q-value$' : 'linear model'
+//   """
+//   ${!params.noquant ? "mssprottable ms1quant -i tproteins -o tprotms1 --psmtable tpsms --protcol ${accolmap[acctype]}" : 'mv tproteins tprotms1'}
+//   ${rawisoquant ? "msspsmtable isoratio -i tpsms -o tprotquant --protcol ${accolmap[acctype]} --targettable tprotms1 --isobquantcolpattern plex --minint 0.1 --denompatterns ${setdenoms[setname].join(' ')}": 'mv tprotms1 tprotquant'}
 
-  # score col is linearmodel_qval or q-value, but if the column only contains 0.0 or NA (no linear modeling possible due to only q<10e-04), we use svm instead
-  tscol=\$(head -1 tpeplinmod | tr '\\t' '\\n' | grep -n "${scorecolpat}" | cut -f 1 -d':')
-  dscol=\$(head -1 dpeplinmod | tr '\\t' '\\n' | grep -n "${scorecolpat}" | cut -f 1 -d':')
-  if [ -n "\$(cut -f \$tscol tpeplinmod | tail -n+2 | egrep -v '(NA\$|0\\.0\$)')" ] && [ -n "\$(cut -f \$dscol dpeplinmod | tail -n+2 | egrep -v '(NA\$|0\\.0\$)')" ]
-    then
-      scpat="${scorecolpat}"
-      logflag="--logscore"
-    else
-      scpat="svm"
-      logflag=""
-      echo 'Not enough q-values or linear-model q-values for peptides to calculate FDR for ${acctype} of set ${setname}, using svm score instead.' >> warnings
-  fi
+//   # score col is linearmodel_qval or q-value, but if the column only contains 0.0 or NA (no linear modeling possible due to only q<10e-04), we use svm instead
+//   tscol=\$(head -1 tpeplinmod | tr '\\t' '\\n' | grep -n "${scorecolpat}" | cut -f 1 -d':')
+//   dscol=\$(head -1 dpeplinmod | tr '\\t' '\\n' | grep -n "${scorecolpat}" | cut -f 1 -d':')
+//   if [ -n "\$(cut -f \$tscol tpeplinmod | tail -n+2 | egrep -v '(NA\$|0\\.0\$)')" ] && [ -n "\$(cut -f \$dscol dpeplinmod | tail -n+2 | egrep -v '(NA\$|0\\.0\$)')" ]
+//     then
+//       scpat="${scorecolpat}"
+//       logflag="--logscore"
+//     else
+//       scpat="svm"
+//       logflag=""
+//       echo 'Not enough q-values or linear-model q-values for peptides to calculate FDR for ${acctype} of set ${setname}, using svm score instead.' >> warnings
+//   fi
 
-  mssprottable bestpeptide -i tprotquant -o tbestpeptides --peptable tpeplinmod --scorecolpattern "\$scpat" \$logflag --protcol ${accolmap[acctype] + 1}
-  mssprottable bestpeptide -i dproteins -o dbestpeptides --peptable dpeplinmod --scorecolpattern "\$scpat" \$logflag --protcol ${accolmap[acctype] + 1}
+//   mssprottable bestpeptide -i tprotquant -o tbestpeptides --peptable tpeplinmod --scorecolpattern "\$scpat" \$logflag --protcol ${accolmap[acctype] + 1}
+//   mssprottable bestpeptide -i dproteins -o dbestpeptides --peptable dpeplinmod --scorecolpattern "\$scpat" \$logflag --protcol ${accolmap[acctype] + 1}
 
-  mssprottable ${acctype == 'proteins' ? 'protfdr' : 'pickedfdr'} -i tbestpeptides --decoyfn dbestpeptides -o ${setname}_protfdr ${acctype == 'genes' ? "--picktype fasta --targetfasta '$tfasta' --decoyfasta '$dfasta' ${params.fastadelim ? "--fastadelim '${params.fastadelim}' --genefield '${params.genefield}'" : '' }" : ''} ${acctype == 'assoc' ? '--picktype result' : ''}
-  """
-}
-
-
-psmwarnings
-  .concat(pepwarnings)
-  .concat(fdrwarnings)
-  .toList()
-  .set { warnings }
-
-// setname, acctype, outfile
-peptides_out
-  .filter { it[2] == 'target' }
-  .map { it -> [it[0], it[1], it[3]] }
-  .concat(protfdrout)
-  .set { features_out }
-
-deqms_psms
-  .filter { it[0] == 'target' }
-  .map { it -> [it[1], it[2]] } 
-  .transpose()
-  .cross(features_out)
-  .map { it -> it[0] + [it[1][1], it[1][2]] }
-  .into { feats_out; deqms }
+//   mssprottable ${acctype == 'proteins' ? 'protfdr' : 'pickedfdr'} -i tbestpeptides --decoyfn dbestpeptides -o ${setname}_protfdr ${acctype == 'genes' ? "--picktype fasta --targetfasta '$tfasta' --decoyfasta '$dfasta' ${params.fastadelim ? "--fastadelim '${params.fastadelim}' --genefield '${params.genefield}'" : '' }" : ''} ${acctype == 'assoc' ? '--picktype result' : ''}
+//   """
+// }
 
 
-process normalizeFeaturesDEqMS {
-  input:
-  set val(setname), file("psms"), val(acctype), file("features") from deqms
-  output:
-  set val("${setname}_${acctype}"), file("${setname}_feats"), file("psmcounts"), file("${setname}_channelmedians") into quanted_feats
-  when: normalize
+// psmwarnings
+//   .concat(pepwarnings)
+//   .concat(fdrwarnings)
+//   .toList()
+//   .set { warnings }
+
+// // setname, acctype, outfile
+// peptides_out
+//   .filter { it[2] == 'target' }
+//   .map { it -> [it[0], it[1], it[3]] }
+//   .concat(protfdrout)
+//   .set { features_out }
+
+// deqms_psms
+//   .filter { it[0] == 'target' }
+//   .map { it -> [it[1], it[2]] } 
+//   .transpose()
+//   .cross(features_out)
+//   .map { it -> it[0] + [it[1][1], it[1][2]] }
+//   .into { feats_out; deqms }
+
+
+// process normalizeFeaturesDEqMS {
+//   input:
+//   set val(setname), file("psms"), val(acctype), file("features") from deqms
+//   output:
+//   set val("${setname}_${acctype}"), file("${setname}_feats"), file("psmcounts"), file("${setname}_channelmedians") into quanted_feats
+//   when: normalize
   
-  script:
-  """
-  # get col nrs for isobaric quant values and create new PSM table with only those and feature columns
-  # need to use awk first because cut cannot paste peptide column twice (happens when peptide is acctype)
-  awk -F \$'\\t' -v OFS=\$'\\t' '{print \$${accolmap.peptides}, \$${accolmap[acctype]}}' psms ${acctype == 'peptides' ? '| sed \'s/Peptide/Accession/\' ' : ''} > pepacc
-  channelcols=\$(head -n1 psms | tr '\\t' '\\n' | grep -n plex | cut -f1 -d ':'| tr '\\n' ',' | sed 's/,\$//')
-  paste pepacc <(cut -f "\$channelcols" psms) > psmvals
-  # run deqMS normalization and summarization, which produces logged ratios
+//   script:
+//   """
+//   # get col nrs for isobaric quant values and create new PSM table with only those and feature columns
+//   # need to use awk first because cut cannot paste peptide column twice (happens when peptide is acctype)
+//   awk -F \$'\\t' -v OFS=\$'\\t' '{print \$${accolmap.peptides}, \$${accolmap[acctype]}}' psms ${acctype == 'peptides' ? '| sed \'s/Peptide/Accession/\' ' : ''} > pepacc
+//   channelcols=\$(head -n1 psms | tr '\\t' '\\n' | grep -n plex | cut -f1 -d ':'| tr '\\n' ',' | sed 's/,\$//')
+//   paste pepacc <(cut -f "\$channelcols" psms) > psmvals
+//   # run deqMS normalization and summarization, which produces logged ratios
 
-  ${params.denoms ? "denomcols=\$(egrep -n \'(${setdenoms[setname].join('|')})\' <( head -n1 psmvals | tr '\\t' '\\n') | cut -f1 -d ':' | tr '\\n' ',' | sed 's/,\$//') " : "touch ${setname}_channelmedians"}
-  deqms_normalize.R psmvals features $setname ${params.denoms ? "\$denomcols" : ''}
-  # join feat tables on normalized proteins
-  paste <(head -n1 features) <(head -n1 normalized_feats | cut -f2-2000) <(echo PSM counts) > ${setname}_feats 
-  join -a1 -o auto -e 'NA' -t \$'\\t' <(tail -n+2 features | sort -k1b,1 ) <(tail -n+2 normalized_feats | sort -k1b,1) >> feats_quants
-  join -a1 -o auto -e 'NA' -t \$'\\t' feats_quants <(sort -k1b,1 psmcounts) >> ${setname}_feats
-  """
-}
+//   ${params.denoms ? "denomcols=\$(egrep -n \'(${setdenoms[setname].join('|')})\' <( head -n1 psmvals | tr '\\t' '\\n') | cut -f1 -d ':' | tr '\\n' ',' | sed 's/,\$//') " : "touch ${setname}_channelmedians"}
+//   deqms_normalize.R psmvals features $setname ${params.denoms ? "\$denomcols" : ''}
+//   # join feat tables on normalized proteins
+//   paste <(head -n1 features) <(head -n1 normalized_feats | cut -f2-2000) <(echo PSM counts) > ${setname}_feats 
+//   join -a1 -o auto -e 'NA' -t \$'\\t' <(tail -n+2 features | sort -k1b,1 ) <(tail -n+2 normalized_feats | sort -k1b,1) >> feats_quants
+//   join -a1 -o auto -e 'NA' -t \$'\\t' feats_quants <(sort -k1b,1 psmcounts) >> ${setname}_feats
+//   """
+// }
 
 
-if(normalize) {
-  feats_out
-    .map { it ->  ["${it[0]}_${it[2]}".toString()] + it }
-    .join(quanted_feats)
-    .groupTuple(by: 3)  // all outputs of same accession type together.
-    .map { it -> [it[1], it[3], it[5], it[6], it[7]] }
-    .set { ptables_to_merge }
-} else {
-  feats_out
-    .map { it -> [it[0], it[2], it[3]] } // setname, accession type, feature table
-    .groupTuple(by: 1) // collect all tables for same feature
-    .set { ptables_to_merge }
-}
+// if(normalize) {
+//   feats_out
+//     .map { it ->  ["${it[0]}_${it[2]}".toString()] + it }
+//     .join(quanted_feats)
+//     .groupTuple(by: 3)  // all outputs of same accession type together.
+//     .map { it -> [it[1], it[3], it[5], it[6], it[7]] }
+//     .set { ptables_to_merge }
+// } else {
+//   feats_out
+//     .map { it -> [it[0], it[2], it[3]] } // setname, accession type, feature table
+//     .groupTuple(by: 1) // collect all tables for same feature
+//     .set { ptables_to_merge }
+// }
 
-psmlookup
-  .filter { it[0] == 'target' }
-  .collect()
-  .map { it[1] }
-  .set { tlookup }
+// psmlookup
+//   .filter { it[0] == 'target' }
+//   .collect()
+//   .map { it[1] }
+//   .set { tlookup }
 
-/*
-* Step 5: Create reports
-*/
+// /*
+// * Step 5: Create reports
+// */
 
-process proteinPeptideSetMerge {
+// process proteinPeptideSetMerge {
 
-  input:
-  set val(setnames), val(acctype), file(tables), file("psmcounts?"), file(normfacs) from ptables_to_merge
-  file(lookup) from tlookup
-  file('sampletable') from Channel.from(sampletable).first()
+//   input:
+//   set val(setnames), val(acctype), file(tables), file("psmcounts?"), file(normfacs) from ptables_to_merge
+//   file(lookup) from tlookup
+//   file('sampletable') from Channel.from(sampletable).first()
   
-  output:
-  set val(acctype), file('proteintable'), file('sampletable') into featqc_extra_peptide_samples
-  set val(acctype), file('proteintable'), file(normfacs) into merged_feats
+//   output:
+//   set val(acctype), file('proteintable'), file('sampletable') into featqc_extra_peptide_samples
+//   set val(acctype), file('proteintable'), file(normfacs) into merged_feats
 
-  script:
-  if (normalize)
-  """
-  # SQLite lookup needs copying to not modify the input file which would mess up a rerun with -resume
-  cat $lookup > db.sqlite
-  msslookup ${acctype == 'peptides' ? 'peptides --fdrcolpattern \'^q-value\' --peptidecol' : 'proteins --fdrcolpattern \'q-value\' --protcol'} 1 --dbfile db.sqlite -i ${tables.join(' ')} --setnames ${setnames.join(' ')} ${!params.noquant ? "--ms1quantcolpattern area" : ""}  ${!params.noquant && params.isobaric ? '--isobquantcolpattern plex' : ''} ${acctype in ['genes', 'assoc'] ? "--genecentric ${acctype}" : ''}
-  ${acctype == 'peptides' ? 'msspeptable build' : 'mssprottable build --mergecutoff 0.01'} --dbfile db.sqlite -o mergedtable ${!params.noquant && params.isobaric ? '--isobaric' : ''} ${!params.noquant ? "--precursor": ""} --fdr ${acctype in ['genes', 'assoc'] ? "--genecentric ${acctype}" : ''} ${params.onlypeptides ? "--noncentric" : ''}
-  # join psm count tables, first make a header from setnames
-  head -n1 mergedtable > tmpheader
+//   script:
+//   if (normalize)
+//   """
+//   # SQLite lookup needs copying to not modify the input file which would mess up a rerun with -resume
+//   cat $lookup > db.sqlite
+//   msslookup ${acctype == 'peptides' ? 'peptides --fdrcolpattern \'^q-value\' --peptidecol' : 'proteins --fdrcolpattern \'q-value\' --protcol'} 1 --dbfile db.sqlite -i ${tables.join(' ')} --setnames ${setnames.join(' ')} ${!params.noquant ? "--ms1quantcolpattern area" : ""}  ${!params.noquant && params.isobaric ? '--isobquantcolpattern plex' : ''} ${acctype in ['genes', 'assoc'] ? "--genecentric ${acctype}" : ''}
+//   ${acctype == 'peptides' ? 'msspeptable build' : 'mssprottable build --mergecutoff 0.01'} --dbfile db.sqlite -o mergedtable ${!params.noquant && params.isobaric ? '--isobaric' : ''} ${!params.noquant ? "--precursor": ""} --fdr ${acctype in ['genes', 'assoc'] ? "--genecentric ${acctype}" : ''} ${params.onlypeptides ? "--noncentric" : ''}
+//   # join psm count tables, first make a header from setnames
+//   head -n1 mergedtable > tmpheader
 
-  # exchange sample names in header
-  ${params.sampletable && params.isobaric ?  
-    'sed -i  "s/[^A-Za-z0-9_\\t]/_/g" sampletable ; \
-    while read line ; do read -a arr <<< $line ; sed -i "s/${arr[1]}_\\([a-z0-9]*plex\\)_${arr[0]}/${arr[3]}_${arr[2]}_${arr[1]}_\\1_${arr[0]}/" tmpheader ; done < sampletable' \
-  : ''}
-  # Add psm quant nr field to header
-  for setn in ${setnames.join(' ')}; do echo "\$setn"_quanted_psm_count ; done >> tmpheader
-  tr '\\n' '\\t' < tmpheader | sed 's/\\s\$/\\n/;s/\\#/Amount/g' > header  # sed to sub trailing tab for a newline, and not have pound sign
-  # then join the table content
-  tail -n+2 mergedtable | sort -k1b,1 > joined
-  for count in \$(seq 1 ${setnames.toList().size}); do join -a1 -o auto -e 'NA' -t \$'\\t' joined <(sort -k1b,1 psmcounts"\$count" ) >> joined_tmp; mv joined_tmp joined; done
-  # finally put header on content
-  cat header joined > proteintable
-  """
-  else
-  """
-  cat $lookup > db.sqlite
-  msslookup ${acctype == 'peptides' ? 'peptides --fdrcolpattern \'^q-value\' --peptidecol' : 'proteins --fdrcolpattern \'q-value\' --protcol'} 1 --dbfile db.sqlite -i ${tables.join(' ')} --setnames ${setnames.join(' ')} ${!params.noquant ? "--ms1quantcolpattern area" : ""}  ${!params.noquant && params.isobaric ? '--isobquantcolpattern plex' : ''} ${acctype in ['genes', 'assoc'] ? "--genecentric ${acctype}" : ''}
-  ${acctype == 'peptides' ? 'msspeptable build' : 'mssprottable build --mergecutoff 0.01'} --dbfile db.sqlite -o mergedtable ${!params.noquant && params.isobaric ? '--isobaric' : ''} ${!params.noquant ? "--precursor": ""} --fdr ${acctype in ['genes', 'assoc'] ? "--genecentric ${acctype}" : ''} ${params.onlypeptides ? "--noncentric" : ''}
-  ${!params.noquant && params.isobaric ? "sed -i 's/\\ \\-\\ \\#\\ quanted\\ PSMs/_quanted_psm_count/g' mergedtable": ''}
-  sed -i 's/\\#/Amount/g' mergedtable
-  # exchange sample names in header
-  head -n1 mergedtable > tmpheader
-  ${params.sampletable && params.isobaric ?  
-    'sed -i  "s/[^A-Za-z0-9_\\t]/_/g" sampletable ; \
-    while read line ; do read -a arr <<< $line ; sed -i "s/${arr[1]}_\\([a-z0-9]*plex\\)_${arr[0]}/${arr[3]}_${arr[2]}_${arr[1]}_\\1_${arr[0]}/" tmpheader ; done < sampletable'\
-  : ''}
-  cat tmpheader <(tail -n+2 mergedtable) > proteintable
-  """
-}
+//   # exchange sample names in header
+//   ${params.sampletable && params.isobaric ?  
+//     'sed -i  "s/[^A-Za-z0-9_\\t]/_/g" sampletable ; \
+//     while read line ; do read -a arr <<< $line ; sed -i "s/${arr[1]}_\\([a-z0-9]*plex\\)_${arr[0]}/${arr[3]}_${arr[2]}_${arr[1]}_\\1_${arr[0]}/" tmpheader ; done < sampletable' \
+//   : ''}
+//   # Add psm quant nr field to header
+//   for setn in ${setnames.join(' ')}; do echo "\$setn"_quanted_psm_count ; done >> tmpheader
+//   tr '\\n' '\\t' < tmpheader | sed 's/\\s\$/\\n/;s/\\#/Amount/g' > header  # sed to sub trailing tab for a newline, and not have pound sign
+//   # then join the table content
+//   tail -n+2 mergedtable | sort -k1b,1 > joined
+//   for count in \$(seq 1 ${setnames.toList().size}); do join -a1 -o auto -e 'NA' -t \$'\\t' joined <(sort -k1b,1 psmcounts"\$count" ) >> joined_tmp; mv joined_tmp joined; done
+//   # finally put header on content
+//   cat header joined > proteintable
+//   """
+//   else
+//   """
+//   cat $lookup > db.sqlite
+//   msslookup ${acctype == 'peptides' ? 'peptides --fdrcolpattern \'^q-value\' --peptidecol' : 'proteins --fdrcolpattern \'q-value\' --protcol'} 1 --dbfile db.sqlite -i ${tables.join(' ')} --setnames ${setnames.join(' ')} ${!params.noquant ? "--ms1quantcolpattern area" : ""}  ${!params.noquant && params.isobaric ? '--isobquantcolpattern plex' : ''} ${acctype in ['genes', 'assoc'] ? "--genecentric ${acctype}" : ''}
+//   ${acctype == 'peptides' ? 'msspeptable build' : 'mssprottable build --mergecutoff 0.01'} --dbfile db.sqlite -o mergedtable ${!params.noquant && params.isobaric ? '--isobaric' : ''} ${!params.noquant ? "--precursor": ""} --fdr ${acctype in ['genes', 'assoc'] ? "--genecentric ${acctype}" : ''} ${params.onlypeptides ? "--noncentric" : ''}
+//   ${!params.noquant && params.isobaric ? "sed -i 's/\\ \\-\\ \\#\\ quanted\\ PSMs/_quanted_psm_count/g' mergedtable": ''}
+//   sed -i 's/\\#/Amount/g' mergedtable
+//   # exchange sample names in header
+//   head -n1 mergedtable > tmpheader
+//   ${params.sampletable && params.isobaric ?  
+//     'sed -i  "s/[^A-Za-z0-9_\\t]/_/g" sampletable ; \
+//     while read line ; do read -a arr <<< $line ; sed -i "s/${arr[1]}_\\([a-z0-9]*plex\\)_${arr[0]}/${arr[3]}_${arr[2]}_${arr[1]}_\\1_${arr[0]}/" tmpheader ; done < sampletable'\
+//   : ''}
+//   cat tmpheader <(tail -n+2 mergedtable) > proteintable
+//   """
+// }
 
-(plain_feats, dqms_feats) = ( params.deqms ? [Channel.empty(), merged_feats] : [merged_feats, Channel.empty()])
+// (plain_feats, dqms_feats) = ( params.deqms ? [Channel.empty(), merged_feats] : [merged_feats, Channel.empty()])
 
-process calculateDEqMS {
+// process calculateDEqMS {
 
-  input:
-  set val(acctype), file('feats'), file(normfacs) from dqms_feats 
-  file('sampletable') from Channel.from(sampletable).first()
+//   input:
+//   set val(acctype), file('feats'), file(normfacs) from dqms_feats 
+//   file('sampletable') from Channel.from(sampletable).first()
 
-  output:
-  set val(acctype), file('deqms_output'), file(normfacs) into dqms_out 
+//   output:
+//   set val(acctype), file('deqms_output'), file(normfacs) into dqms_out 
 
-  script:
-  """
-  deqms.R 
-  """
-}
-
-
-
-psm_result
-  .filter { it[0] == 'target' }
-  .merge(scans_result)
-  .map { it -> [it[0], it[1], it[2], it[3].unique()] }
-  .set { targetpsm_result }
+//   script:
+//   """
+//   deqms.R 
+//   """
+// }
 
 
-process psmQC {
-  input:
-  set val(td), file('psms'), file('scans'), val(plates) from targetpsm_result
-  val(setnames) from setnames_psmqc
-  output:
-  set val('psms'), file('psmqc.html'), file('summary.txt') into psmqccollect
-  val(plates) into qcplates
-  // TODO no proteins == no coverage for pep centric
-  script:
-  """
-  qc_psms.R ${setnames[0].size()} ${fractionation ? 'TRUE' : 'FALSE'} ${plates.join(' ')}
-  echo "<html><body>" > psmqc.html
-  for graph in psm-scans missing-tmt miscleav
-    do
-    [[ -e \$graph ]] && paste -d \\\\0  <(echo "<div class=\\"chunk\\" id=\\"\${graph}\\"><img src=\\"data:image/png;base64,") <(base64 -w 0 \$graph) <(echo '"></div>') >> psmqc.html
-    done 
-  for graph in retentiontime precerror fryield msgfscore
-    do
-    for plateid in ${plates.join(' ')}
-      do
-      plate="PLATE___\${plateid}___\${graph}"
-      [[ -e \$plate ]] && paste -d \\\\0  <(echo "<div class=\\"chunk \$plateid\\" id=\\"\${graph}\\"><img src=\\"data:image/png;base64,") <(base64 -w 0 \$plate) <(echo '"></div>') >> psmqc.html
-      done 
-    done
-  echo "</body></html>" >> psmqc.html
-  """
-}
 
-featqc_extra_peptide_samples
-  .filter { it[0] == 'peptides' }
-  .map { it -> [it[1], it[2]] }
-  .set { featqc_peptides_samples }
-
-plain_feats
-  .mix(dqms_out)
-  .merge(setnames_featqc)
-  .combine(featqc_peptides_samples)
-  .set { featqcinput }
+// psm_result
+//   .filter { it[0] == 'target' }
+//   .merge(scans_result)
+//   .map { it -> [it[0], it[1], it[2], it[3].unique()] }
+//   .set { targetpsm_result }
 
 
-process featQC {
-  publishDir "${params.outdir}", mode: 'copy', overwrite: true, saveAs: {it == "feats" ? "${outname}_table.txt": null}
+// process psmQC {
+//   input:
+//   set val(td), file('psms'), file('scans'), val(plates) from targetpsm_result
+//   val(setnames) from setnames_psmqc
+//   output:
+//   set val('psms'), file('psmqc.html'), file('summary.txt') into psmqccollect
+//   val(plates) into qcplates
+//   // TODO no proteins == no coverage for pep centric
+//   script:
+//   """
+//   qc_psms.R ${setnames[0].size()} ${fractionation ? 'TRUE' : 'FALSE'} ${plates.join(' ')}
+//   echo "<html><body>" > psmqc.html
+//   for graph in psm-scans missing-tmt miscleav
+//     do
+//     [[ -e \$graph ]] && paste -d \\\\0  <(echo "<div class=\\"chunk\\" id=\\"\${graph}\\"><img src=\\"data:image/png;base64,") <(base64 -w 0 \$graph) <(echo '"></div>') >> psmqc.html
+//     done 
+//   for graph in retentiontime precerror fryield msgfscore
+//     do
+//     for plateid in ${plates.join(' ')}
+//       do
+//       plate="PLATE___\${plateid}___\${graph}"
+//       [[ -e \$plate ]] && paste -d \\\\0  <(echo "<div class=\\"chunk \$plateid\\" id=\\"\${graph}\\"><img src=\\"data:image/png;base64,") <(base64 -w 0 \$plate) <(echo '"></div>') >> psmqc.html
+//       done 
+//     done
+//   echo "</body></html>" >> psmqc.html
+//   """
+// }
 
-  input:
-  set val(acctype), file('feats'), file(normfacs), val(setnames), file(peptable), file(sampletable) from featqcinput
+// featqc_extra_peptide_samples
+//   .filter { it[0] == 'peptides' }
+//   .map { it -> [it[1], it[2]] }
+//   .set { featqc_peptides_samples }
 
-  output:
-  file('feats') into featsout
-  set val(acctype), file('featqc.html'), file('summary.txt'), file('overlap') into qccollect
-
-  script:
-  outname = (acctype == 'assoc') ? 'symbols' : acctype
-  show_normfactors = setdenoms.size() && normalize
-  """
-  # combine multi-set normalization factors
-  cat ${normfacs} > allnormfacs
-  # Create QC plots and put them base64 into HTML, R also creates summary.txt
-  # FIXME normalization factor plots should not depend on denoms, can also be sweep when deqms has support for that
-  # ... change switch to that here and below: normalize ? --normtable ... 
-  qc_protein.R --sets ${setnames.collect() { "'$it'" }.join(' ')} --feattype ${acctype} --peptable $peptable ${params.sampletable ? "--sampletable $sampletable" : ''} ${show_normfactors ? '--normtable allnormfacs' : ''}
-  echo "<html><body>" > featqc.html
-  for graph in featyield precursorarea coverage isobaric ${show_normfactors ? 'normfactors': ''} nrpsms nrpsmsoverlapping percentage_onepsm ms1nrpeps;
-    do
-    [ -e \$graph ] && paste -d \\\\0  <(echo "<div class=\\"chunk\\" id=\\"\${graph}\\"><img src=\\"data:image/png;base64,") <(base64 -w 0 \$graph) <(echo '"></div>') >> featqc.html
-    done 
-  # Fetch special (multi-pane) DEqMS and PCA plots
-  # Use ls to check because wildcard doesnt work in -e
-  ls deqms_volcano_* && echo '<div class="chunk" id="deqms">' >> featqc.html
-  for graph in deqms_volcano_*;
-    do
-    paste -d \\\\0  <(echo '<div><img src="data:image/png;base64,') <(base64 -w 0 \$graph) <(echo '"></div>') >> featqc.html
-    done
-  ls deqms_volcano_* && echo '</div>' >> featqc.html
-  [ -e pca ] && echo '<div class="chunk" id="pca">' >> featqc.html && for graph in pca scree;
-    do 
-    paste -d \\\\0  <(echo '<div><img src="data:image/png;base64,') <(base64 -w 0 \$graph) <(echo '"></div>') >> featqc.html
-    done
-    [ -e pca ] && echo '</div>' >> featqc.html
-
-  echo "</body></html>" >> featqc.html
-  ${acctype == 'peptides' ? 'touch summary.txt' : ''}
-
-  # Create overlap table
-  qcols=\$(head -n1 feats |tr '\\t' '\\n'|grep -n "_q-value"| tee nrsets | cut -f 1 -d ':' |tr '\\n' ',' | sed 's/\\,\$//')
-  protcol=\$(head -n1 feats | tr '\\t' '\\n' | grep -n Protein | cut -f1 -d ':')
-  ${acctype == 'peptides' ? 'cut -f1,"\$qcols","\$protcol" feats | grep -v ";" > tmpqvals' : 'cut -f1,"\$qcols" feats > qvals'}
-  ${acctype == 'peptides' ? 'nonprotcol=\$(head -n1 tmpqvals | tr "\\t" "\\n" |grep -vn Protein | cut -f1 -d":" | tr "\\n" "," | sed "s/\\,\$//") && cut -f"\$nonprotcol" tmpqvals > qvals' : ''}
-  nrsets=\$(wc -l nrsets | sed 's/\\ .*//')
-  # read lines, sed removes all non-A chars so only N from NA is left.
-  while read line ; do 
-  	nr=\$(printf "\$line" |wc -m)  # Count NA
-  	overlap=\$(( \$nrsets-\$nr )) # nrsets minus NAcount is the overlap
-  	echo "\$overlap" >> setcount
-  done < <(tail -n+2 qvals | cut -f2- | sed 's/[^A]//g' )
-  echo nr_sets\$'\t'nr_${acctype} > overlap
-  for num in \$(seq 1 \$nrsets); do 
-  	echo "\$num"\$'\t'\$( grep ^"\$num"\$ setcount | wc -l) >> overlap
-  done
-  """
-}
-
-qccollect
-  .concat(psmqccollect)
-  .toList()
-  .map { it -> [it.collect() { it[0] }, it.collect() { it[1] }, it.collect() { it[2] }, it.collect() { it[3] }] }
-  .set { collected_feats_qc }
+// plain_feats
+//   .mix(dqms_out)
+//   .merge(setnames_featqc)
+//   .combine(featqc_peptides_samples)
+//   .set { featqcinput }
 
 
-process collectQC {
+// process featQC {
+//   publishDir "${params.outdir}", mode: 'copy', overwrite: true, saveAs: {it == "feats" ? "${outname}_table.txt": null}
 
-  publishDir "${params.outdir}", mode: 'copy', overwrite: true
+//   input:
+//   set val(acctype), file('feats'), file(normfacs), val(setnames), file(peptable), file(sampletable) from featqcinput
 
-  input:
-  set val(acctypes), file('feat?'), file('summary?'), file('overlap?') from collected_feats_qc
-  val(plates) from qcplates
-  file('sw_ver') from software_versions_qc
-  file('warnings??') from warnings
+//   output:
+//   file('feats') into featsout
+//   set val(acctype), file('featqc.html'), file('summary.txt'), file('overlap') into qccollect
 
-  output:
-  set file('qc_light.html'), file('qc_full.html')
+//   script:
+//   outname = (acctype == 'assoc') ? 'symbols' : acctype
+//   show_normfactors = setdenoms.size() && normalize
+//   """
+//   # combine multi-set normalization factors
+//   cat ${normfacs} > allnormfacs
+//   # Create QC plots and put them base64 into HTML, R also creates summary.txt
+//   # FIXME normalization factor plots should not depend on denoms, can also be sweep when deqms has support for that
+//   # ... change switch to that here and below: normalize ? --normtable ... 
+//   qc_protein.R --sets ${setnames.collect() { "'$it'" }.join(' ')} --feattype ${acctype} --peptable $peptable ${params.sampletable ? "--sampletable $sampletable" : ''} ${show_normfactors ? '--normtable allnormfacs' : ''}
+//   echo "<html><body>" > featqc.html
+//   for graph in featyield precursorarea coverage isobaric ${show_normfactors ? 'normfactors': ''} nrpsms nrpsmsoverlapping percentage_onepsm ms1nrpeps;
+//     do
+//     [ -e \$graph ] && paste -d \\\\0  <(echo "<div class=\\"chunk\\" id=\\"\${graph}\\"><img src=\\"data:image/png;base64,") <(base64 -w 0 \$graph) <(echo '"></div>') >> featqc.html
+//     done 
+//   # Fetch special (multi-pane) DEqMS and PCA plots
+//   # Use ls to check because wildcard doesnt work in -e
+//   ls deqms_volcano_* && echo '<div class="chunk" id="deqms">' >> featqc.html
+//   for graph in deqms_volcano_*;
+//     do
+//     paste -d \\\\0  <(echo '<div><img src="data:image/png;base64,') <(base64 -w 0 \$graph) <(echo '"></div>') >> featqc.html
+//     done
+//   ls deqms_volcano_* && echo '</div>' >> featqc.html
+//   [ -e pca ] && echo '<div class="chunk" id="pca">' >> featqc.html && for graph in pca scree;
+//     do 
+//     paste -d \\\\0  <(echo '<div><img src="data:image/png;base64,') <(base64 -w 0 \$graph) <(echo '"></div>') >> featqc.html
+//     done
+//     [ -e pca ] && echo '</div>' >> featqc.html
 
-  script:
-  """
-  count=1; for ac in ${acctypes.join(' ')}; do mv feat\$count \$ac.html; mv summary\$count \${ac}_summary; mv overlap\$count \${ac}_overlap; ((count++)); done
-  join -j 1 -o auto -t '\t' <(head -n1 psms_summary) <(head -n1 peptides_summary) > psmpepsum_header
-  join -j 1 -o auto -t '\t' <(tail -n+2 psms_summary | sort -k1b,1 ) <(tail -n+2 peptides_summary | sort -k1b,1 ) > psmpepsum_tab
+//   echo "</body></html>" >> featqc.html
+//   ${acctype == 'peptides' ? 'touch summary.txt' : ''}
 
-  # onlypeptides makes a quick summary, else also add proteins
-  ${params.onlypeptides ? 'cat psmpepsum_header psmpepsum_tab | tee summary pre_summary_light_tab' : 'join -j 1 -o auto -t \'\t\' psmpepsum_tab <(sort -k1b,1 <(tail -n+2 proteins_summary)) > pepprotsum_tab && join -j 1 -o auto -t \'\t\' psmpepsum_header <(head -n1 proteins_summary) > pepprotsum_head'}
-  ${params.onlypeptides ? "awk -v FS='\\t' -v OFS='\\t' '{print \$1,\$3,\$2}' pre_summary_light_tab > summary_light" : ""}
+//   # Create overlap table
+//   qcols=\$(head -n1 feats |tr '\\t' '\\n'|grep -n "_q-value"| tee nrsets | cut -f 1 -d ':' |tr '\\n' ',' | sed 's/\\,\$//')
+//   protcol=\$(head -n1 feats | tr '\\t' '\\n' | grep -n Protein | cut -f1 -d ':')
+//   ${acctype == 'peptides' ? 'cut -f1,"\$qcols","\$protcol" feats | grep -v ";" > tmpqvals' : 'cut -f1,"\$qcols" feats > qvals'}
+//   ${acctype == 'peptides' ? 'nonprotcol=\$(head -n1 tmpqvals | tr "\\t" "\\n" |grep -vn Protein | cut -f1 -d":" | tr "\\n" "," | sed "s/\\,\$//") && cut -f"\$nonprotcol" tmpqvals > qvals' : ''}
+//   nrsets=\$(wc -l nrsets | sed 's/\\ .*//')
+//   # read lines, sed removes all non-A chars so only N from NA is left.
+//   while read line ; do 
+//   	nr=\$(printf "\$line" |wc -m)  # Count NA
+//   	overlap=\$(( \$nrsets-\$nr )) # nrsets minus NAcount is the overlap
+//   	echo "\$overlap" >> setcount
+//   done < <(tail -n+2 qvals | cut -f2- | sed 's/[^A]//g' )
+//   echo nr_sets\$'\t'nr_${acctype} > overlap
+//   for num in \$(seq 1 \$nrsets); do 
+//   	echo "\$num"\$'\t'\$( grep ^"\$num"\$ setcount | wc -l) >> overlap
+//   done
+//   """
+// }
 
-  # in case of genes, join those on the prot/pep tables (full summary) and psmpeptables (light summary), else passthrough those to summaries
-  ${params.genes ?  'join -j 1 -o auto -t \'\t\' pepprotsum_tab <( sort -k1b,1 <( tail -n+2 genes_summary)) > summary_tab && join -j 1 -o auto -t \'\t\' pepprotsum_head <(head -n1 genes_summary) > summary_head && cat summary_head summary_tab > summary' : "${!params.onlypeptides ? 'cat pepprotsum_head pepprotsum_tab | tee summary summary_light' : ""}"}
-  ${params.genes ?  'join -j 1 -o auto -t \'\t\' psmpepsum_tab <( sort -k1b,1 <(tail -n+2 genes_summary)) > summary_light_tab' : ''}
-  ${params.genes ?  'join -j 1 -o auto -t \'\t\' psmpepsum_header <( head -n1 genes_summary) > summary_light_head && cat summary_light_head summary_light_tab > summary_light' : ''}
+// qccollect
+//   .concat(psmqccollect)
+//   .toList()
+//   .map { it -> [it.collect() { it[0] }, it.collect() { it[1] }, it.collect() { it[2] }, it.collect() { it[3] }] }
+//   .set { collected_feats_qc }
 
-  # remove Yaml from software_versions to get HTML
-  grep -A \$(wc -l sw_ver | cut -f 1 -d ' ') "data\\:" sw_ver | tail -n+2 > sw_ver_cut
+
+// process collectQC {
+
+//   publishDir "${params.outdir}", mode: 'copy', overwrite: true
+
+//   input:
+//   set val(acctypes), file('feat?'), file('summary?'), file('overlap?') from collected_feats_qc
+//   val(plates) from qcplates
+//   file('sw_ver') from software_versions_qc
+//   file('warnings??') from warnings
+
+//   output:
+//   set file('qc_light.html'), file('qc_full.html')
+
+//   script:
+//   """
+//   count=1; for ac in ${acctypes.join(' ')}; do mv feat\$count \$ac.html; mv summary\$count \${ac}_summary; mv overlap\$count \${ac}_overlap; ((count++)); done
+//   join -j 1 -o auto -t '\t' <(head -n1 psms_summary) <(head -n1 peptides_summary) > psmpepsum_header
+//   join -j 1 -o auto -t '\t' <(tail -n+2 psms_summary | sort -k1b,1 ) <(tail -n+2 peptides_summary | sort -k1b,1 ) > psmpepsum_tab
+
+//   # onlypeptides makes a quick summary, else also add proteins
+//   ${params.onlypeptides ? 'cat psmpepsum_header psmpepsum_tab | tee summary pre_summary_light_tab' : 'join -j 1 -o auto -t \'\t\' psmpepsum_tab <(sort -k1b,1 <(tail -n+2 proteins_summary)) > pepprotsum_tab && join -j 1 -o auto -t \'\t\' psmpepsum_header <(head -n1 proteins_summary) > pepprotsum_head'}
+//   ${params.onlypeptides ? "awk -v FS='\\t' -v OFS='\\t' '{print \$1,\$3,\$2}' pre_summary_light_tab > summary_light" : ""}
+
+//   # in case of genes, join those on the prot/pep tables (full summary) and psmpeptables (light summary), else passthrough those to summaries
+//   ${params.genes ?  'join -j 1 -o auto -t \'\t\' pepprotsum_tab <( sort -k1b,1 <( tail -n+2 genes_summary)) > summary_tab && join -j 1 -o auto -t \'\t\' pepprotsum_head <(head -n1 genes_summary) > summary_head && cat summary_head summary_tab > summary' : "${!params.onlypeptides ? 'cat pepprotsum_head pepprotsum_tab | tee summary summary_light' : ""}"}
+//   ${params.genes ?  'join -j 1 -o auto -t \'\t\' psmpepsum_tab <( sort -k1b,1 <(tail -n+2 genes_summary)) > summary_light_tab' : ''}
+//   ${params.genes ?  'join -j 1 -o auto -t \'\t\' psmpepsum_header <( head -n1 genes_summary) > summary_light_head && cat summary_light_head summary_light_tab > summary_light' : ''}
+
+//   # remove Yaml from software_versions to get HTML
+//   grep -A \$(wc -l sw_ver | cut -f 1 -d ' ') "data\\:" sw_ver | tail -n+2 > sw_ver_cut
   
-  # merge warnings
-  ls warnings* && cat warnings* > warnings.txt
-  # collect and generate HTML report
-  qc_collect.py $baseDir/assets/qc_full.html $params.name ${fractionation ? "frac" : "nofrac"} ${plates.join(' ')}
-  qc_collect.py $baseDir/assets/qc_light.html $params.name ${fractionation ? "frac" : "nofrac"} ${plates.join(' ')}
-  """
-}
+//   # merge warnings
+//   ls warnings* && cat warnings* > warnings.txt
+//   # collect and generate HTML report
+//   qc_collect.py $baseDir/assets/qc_full.html $params.name ${fractionation ? "frac" : "nofrac"} ${plates.join(' ')}
+//   qc_collect.py $baseDir/assets/qc_light.html $params.name ${fractionation ? "frac" : "nofrac"} ${plates.join(' ')}
+//   """
+// }
 
 
 /* 
